@@ -1,0 +1,16 @@
+version: '3'
+services:
+  python:
+    image: python:3.9
+    container_name: python
+    hostname: python
+    volumes:
+      - ./requirements.txt:/app/requirements.txt
+      - ./:/app
+    working_dir: /app
+    command: bash -c "tail -f /dev/null"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
