@@ -1,0 +1,21 @@
+version: '3'
+services:
+  python:
+    image: tg-shell-bot
+    container_name: tg-shell-bot
+    hostname: tg-shell-bot
+    network_mode: "host"
+    environment:
+      - HOSTNAME=10.11.11.11
+      - port=22
+      - TELEGRAM_BOT_TOKEN=
+      - ALLOWED_USERS=
+    volumes:
+      - ./config:/app
+    working_dir: /app
+    command: ["bash", "-c", "tail -f /dev/null & exec python app.py"]
+    logging:                                                                                                
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "3"
