@@ -17,4 +17,12 @@ app-v2
 2024-07-01
 app-v3
 
-1. 新增update_json按鈕，應答式回應 Y/N 確認是否繼續執行
+1. 新增update_json按鈕，應答式回應 Y/N 確認是否繼續執行。
+
+---
+2024-07-02
+app-v4
+
+1. 增加 ParseMode，讓 telegram bot 輸出 parse_mode=ParseMode.HTML。
+2. 調整command變量，讓 bot api 可使用無序方式輸出。
+3. bug fix 新增 當輸入命令時，遠端沒有對應腳本判斷
