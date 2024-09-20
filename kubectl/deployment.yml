@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telegram-bot
+  namespace: test
+  labels:
+    app: telegram-bot
+    tier: infr
+spec:  
+  replicas: 1
+  selector:
+    matchLabels:
+      app: telegram-bot
+  template:
+    metadata:
+      labels:
+        app: telegram-bot
+    spec:
+      imagePullSecrets:
+        - name: registry
+      containers:
+      - name: telegram-bot
+        image: telegram-bot:v2
+        env:
+        - name: HOSTNAME
+          value: "10.0.1.x"
+        - name: ALLOWED_USERS
+          value: "183333"
+        - name: PORT
+          value: "22"
+        - name: TELEGRAM_BOT_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: telegram-bot-secrets
+              key: TELEGRAM_BOT_TOKEN
+        volumeMounts:
+        - name: ssh-key
+          mountPath: /root/.ssh/id_rsa  # 將私鑰掛載到Pod的路徑
+          subPath: id_rsa               # 指定ConfigMap中的id_rsa文件
+        - name: config-volume
+          mountPath: /app
+        workingDir: /app
+        #command: ["python", "/app/app.py"]
+        #command: ["bash", "-c", "tail -f /dev/null & exec python app.py"]
+        #command: ["bash", "-c", "tail -f /dev/null"]
+        #command: ["bash", "-c", "cp /root/.ssh/id_rsa /tmp/id_rsa && chmod 600 /tmp/id_rsa && tail -f /dev/null"]
+        command: [ "/bin/bash", "-c" ]
+        args:
+          - |
+            cp /root/.ssh/id_rsa /tmp/id_rsa &&
+            chmod 600 /tmp/id_rsa &&
+            tail -f /dev/null & exec python app.py
+        resources:
+          limits:
+            memory: "256Mi"
+            cpu: "300m"
+      volumes:
+      - name: config-volume
+        configMap:
+          name: telegram-bot-config
+      - name: ssh-key
+        configMap:
+          name: telegram-bot-sshkey
+          items:
+          - key: id_rsa
+            path: id_rsa
+      restartPolicy: Always

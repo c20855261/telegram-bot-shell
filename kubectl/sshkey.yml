@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telegram-bot-sshkey
+  namespace: test
+data:
+  id_rsa: |
+    -----BEGIN RSA PRIVATE KEY-----
+    #insert your key
+    -----END RSA PRIVATE KEY-----

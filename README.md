@@ -1,4 +1,10 @@
 # telegram-bot-shell
+
+telegram bot father
+```
+Bot Settings > Group Privacy > Turn off
+Privacy mode is disabled
+```
 2024-03-06
 app-v1
 
@@ -26,3 +32,13 @@ app-v4
 1. 增加 ParseMode，讓 telegram bot 輸出 parse_mode=ParseMode.HTML。
 2. 調整command變量，讓 bot api 可使用無序方式輸出。
 3. bug fix 新增 當輸入命令時，遠端沒有對應腳本判斷
+
+---
+2024-09-20
+
+1. 新增k8s部屬配置
+2. 新增get_google_drive.sh
+   (獲取輸出顯示雲端excel檔案內容)
+   1-1. 建立帳戶下新專案
+        https://console.cloud.google.com/apis/
+   1-2. 憑證 > 建立服務帳戶 > 建立當下即可取得帳戶json檔案
