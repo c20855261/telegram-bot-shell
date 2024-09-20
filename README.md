@@ -39,6 +39,6 @@ app-v4
 1. 新增k8s部屬配置
 2. 新增get_google_drive.sh
    (獲取輸出顯示雲端excel檔案內容)
-   1-1. 建立帳戶下新專案
+- 1-1. 建立帳戶下新專案
         https://console.cloud.google.com/apis/
-   1-2. 憑證 > 建立服務帳戶 > 建立當下即可取得帳戶json檔案
+- 1-2. 憑證 > 建立服務帳戶 > 建立當下即可取得帳戶json檔案
