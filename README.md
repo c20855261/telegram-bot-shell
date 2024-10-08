@@ -42,3 +42,16 @@ app-v4
 - 1-1. 建立帳戶下新專案
         https://console.cloud.google.com/apis/
 - 1-2. 憑證 > 建立服務帳戶 > 建立當下即可取得帳戶json檔案
+
+---
+2024-10-08
+
+1. 新增階層式按鈕回應
+```
+note:
+#按鈕名稱、長度、特殊字符、函數名 有相關性
+[InlineKeyboardButton("jenkins", callback_data='jenkins')] 
+
+selected_param_2 = button_data.split('_')[2] #擷取 $2 字段
+```
+

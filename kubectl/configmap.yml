@@ -47,8 +47,8 @@ data:
              
         if user_id not in ALLOWED_USERS:
             update.message.reply_text("You are not allowed to execute commands.")
-            return                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
-             
+            return
+
         commands = ['deploy', 'json', 'aaa', 'bbb']
              
         command = next((cmd for cmd in commands if message_text.startswith(cmd)), None)

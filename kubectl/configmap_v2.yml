@@ -1,0 +1,329 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: telegram-bot-config
+  namespace: test
+data:
+  app.py: |
+    import logging
+    import paramiko
+    import os
+    import time
+    import re
+    from flask import Flask
+    from telegram import ParseMode
+    from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup
+    from telegram.ext import MessageHandler, Filters, CallbackContext, Updater, CallbackQueryHandler
+    
+    hostname = os.environ.get('HOSTNAME')
+    port = int(os.environ.get('PORT', 22))
+    username = 'root'
+    private_key_path = '/tmp/id_rsa'
+    
+    private_key = paramiko.RSAKey(filename=private_key_path)
+    
+    telegram_bot_token = os.environ.get('TELEGRAM_BOT_TOKEN')
+    
+    allowed_users_str = os.environ.get('ALLOWED_USERS', '')
+    ALLOWED_USERS = [int(user_id) for user_id in allowed_users_str.split(',') if user_id]
+    
+    app = Flask(__name__)
+    bot = Bot(token=telegram_bot_token)
+
+    ssh = paramiko.SSHClient()
+    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    
+    @app.route("/")
+    def index():
+        return "Hello, this is your Flask web server!"
+    
+    def handle_telegram_message(update: Update, context: CallbackContext):
+        user_id = update.message.from_user.id
+        message_text = update.message.text.lower()
+    
+        if user_id not in ALLOWED_USERS:
+            update.message.reply_text("You are not allowed to execute commands.")
+            return
+    
+        commands = ['deploy', 'dd']
+    
+        command = next((cmd for cmd in commands if message_text.startswith(cmd)), None)
+    
+        if command:
+            parameters = message_text.split(' ', 1)
+            if len(parameters) < 2 and command not in ['aaa', 'dd']:
+                update.message.reply_text("⚠️ Please enter the field <b>value1</b> & <b>value2</b>", parse_mode=ParseMode.HTML)
+                return
+    
+            if command == 'dd':
+                try:
+                    options = ['test', 'json']
+                    keyboard = [[InlineKeyboardButton(option, callback_data=option) for option in options]]
+    
+                    reply_markup = InlineKeyboardMarkup(keyboard)
+                    update.message.reply_text("請選擇一個操作:", reply_markup=reply_markup)
+                except Exception as e:
+                    update.message.reply_text(f"Error handling command: {str(e)}")
+                return
+    
+            script_name, script_args = parameters[0], parameters[1] if len(parameters) > 1 else None
+    
+            try:
+                ssh = paramiko.SSHClient()
+                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                ssh.connect(hostname, port, username=username, pkey=private_key)
+    
+                stdin, stdout, stderr = ssh.exec_command(f'test -f /opt/devops/script/telegram-script/{script_name.split(".")[0]}.sh && echo "exists" || echo "not exists"')
+                script_exists = stdout.read().decode('utf-8').strip()
+    
+                if script_exists == "not exists":
+                    update.message.reply_text(f"❌ <b>Error</b> : Script '{command}.sh' \nnot found on the remote server.", parse_mode=ParseMode.HTML)
+                    ssh.close()
+                    return
+    
+                if script_args:
+                    command_to_execute = f'sh /opt/devops/script/telegram-script/{script_name.split(".")[0]}.sh {script_args}'
+                else:
+                    command_to_execute = f'sh /opt/devops/script/telegram-script/{script_name.split(".")[0]}.sh'
+                stdin, stdout, stderr = ssh.exec_command(command_to_execute)
+                output = stdout.read().decode('utf-8')
+                error_output = stderr.read().decode('utf-8')
+                ssh.close()
+    
+                print(f"Script output (stdout): {output}")
+                print(f"Script error output (stderr): {error_output}")
+                     
+                chunks = split_message(output)
+                for chunk in chunks:
+                    update.message.reply_text(chunk)
+                     
+            except Exception as e:
+                update.message.reply_text(f"Error executing command: {str(e)}")
+            return   
+                     
+        if message_text == 'man':
+                try: 
+                        keyboard = [
+                                [InlineKeyboardButton("List_domain", callback_data='list_domain')],
+                                [InlineKeyboardButton("list_Gdrive", callback_data='list_Gdrive')],
+                                [InlineKeyboardButton("jenkins", callback_data='jenkins')]
+                        ]
+                        reply_markup = InlineKeyboardMarkup(keyboard)
+                        update.message.reply_text('可執行命令:', reply_markup=reply_markup)
+                except Exception as e:
+                        update.message.reply_text(f"Error handling command: {str(e)}")
+                return
+                     
+        if message_text not in commands:
+                command_list = '\n'.join([f'▷  {cmd}' for cmd in commands])
+                message = (
+                        "ℹ️ Unknown command.\n"
+                        "Please use one of the supported commands:\n\n"
+                        f"<b>{command_list}</b>"
+                )    
+                update.message.reply_text(message, parse_mode=ParseMode.HTML)
+    # Handle button callback
+    def button_callback(update: Update, context: CallbackContext):
+        query = update.callback_query
+        button_data = query.data
+     
+        print(f"Received callback_data: {button_data}")
+     
+        if button_data == 'list_Gdrive':
+                keyboard = [
+                    [InlineKeyboardButton("Yes", callback_data='confirm_list_Gdrive')],
+                    [InlineKeyboardButton("No", callback_data='cancel_list_Gdrive')]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                query.edit_message_text("⚠️️ Are you sure you want to execute the <b>list_Gdrive</b> script?",
+                                        reply_markup=reply_markup, parse_mode=ParseMode.HTML)
+     
+        else:
+                execute_script(query, button_data)
+     
+    def fetch_remote_options(file_path):
+        """從遠端檔案讀取選項"""
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh.connect(hostname, port, username, pkey=private_key)
+
+        command = f'cat {file_path}'
+        stdin, stdout, stderr = ssh.exec_command(command)
+        output = stdout.read().decode('utf-8').splitlines()
+        ssh.close()
+
+        return output
+
+    def generate_keyboard(options, callback_prefix, buttons_per_row=2):
+        keyboard = []
+        for i in range(0, len(options), buttons_per_row):
+            row = [InlineKeyboardButton(opt, callback_data=f'{callback_prefix}_{opt}') for opt in options[i:i + buttons_per_row]]
+            keyboard.append(row)
+        return InlineKeyboardMarkup(keyboard)
+
+    def handle_jenkins(update: Update, context: CallbackContext):
+        query = update.callback_query
+        options_1 = fetch_remote_options('/opt/devops/script/telegram-script/job')  # 動態讀取 $1 的選項
+        keyboard_1 = generate_keyboard(options_1, 'jenkins')
+
+        query.edit_message_text("請選擇 <b>Job name</b>:", reply_markup=keyboard_1, parse_mode="HTML")
+
+
+    def handle_jenkins_selection(update: Update, context: CallbackContext):
+        query = update.callback_query
+        button_data = query.data
+        print(f"Received callback_data: {button_data}")
+
+        if button_data.startswith('jenkins_'):
+            #selected_param_1 = button_data.split('_')[2]  # 擷取 $1 的值
+            selected_param_1 = button_data[len('jenkins_'):]
+            print(f"Selected param 1: {selected_param_1}")
+            context.user_data['param_1'] = selected_param_1  # 暫存 $1 值
+
+            # 動態讀取 $2 的選項
+            options_2 = fetch_remote_options('/opt/devops/script/telegram-script/param2')
+            keyboard_2 = generate_keyboard(options_2, 'run_jenkins')
+
+            query.edit_message_text(f"已選擇 : <b>{selected_param_1}</b>\n請選擇參數 <b>$2</b>:",
+                                    reply_markup=keyboard_2, parse_mode="HTML")
+     
+    def handle_run_jenkins(update: Update, context: CallbackContext):
+        query = update.callback_query
+        button_data = query.data
+
+        if button_data.startswith('run_jenkins_'):
+            selected_param_2 = button_data.split('_')[2]  # 擷取 $2 的值
+            #selected_param_2 = button_data[len('run_jenkins_'):] # 擷取 $2 的值
+            print(f"Selected param 2: {selected_param_2}") 
+            context.user_data['param_2'] = selected_param_2
+
+            if 'param_1' not in context.user_data:
+            #if 'param_1' not in context.user_data or 'param_2' not in context.user_data:
+               query.edit_message_text("❌ **Error**: $1 未找到，請重新開始。", parse_mode="HTML")
+               return
+
+            param_1 = context.user_data.get('param_1')  # 從暫存中讀取 $1
+            param_2 = context.user_data.get('param_2')
+
+            if param_1 and param_2:
+               #print(f"Executing jenkins with param_1: {param_1}, param_2: {selected_param_2}")
+               options_3 = fetch_remote_options('/opt/devops/script/telegram-script/param3')
+               keyboard_3 = generate_keyboard(options_3, 'execute_jenkins')
+               query.edit_message_text(f"已選擇 $2: <b>{selected_param_2}</b>\n請選擇參數 <b>$3</b>:",
+                                       reply_markup=keyboard_3, parse_mode="HTML")
+            else:
+                query.edit_message_text("❌ **Error**: $1 未找到，請重新開始。", parse_mode="HTML")
+
+    def handle_execute_jenkins(update: Update, context: CallbackContext):
+        query = update.callback_query
+        button_data = query.data
+        print(f"Callback data received: {button_data}")
+
+        if button_data.startswith('execute_jenkins_'):
+            selected_param_3 = button_data.split('_')[2]  # 擷取 $3 的值
+            #selected_param_3 = button_data[len('execute_jenkins_'): 
+
+            print(f"Selected param 3: {selected_param_3}")
+            context.user_data['param_3'] = selected_param_3  # 暫存 $3 值
+
+            if 'param_1' not in context.user_data or 'param_2' not in context.user_data:
+                query.edit_message_text("❌ **Error**: $1 或 $2 未找到，請重新開始。", parse_mode="HTML")
+                return
+
+            param_1 = context.user_data.get('param_1')  # 從暫存中讀取 $1
+            param_2 = context.user_data.get('param_2')  # 從暫存中讀取 $2
+            param_3 = context.user_data.get('param_3')  # 從暫存中讀取 $3
+            print(f"Debug - Parameters: param_1={param_1}, param_2={param_2}, param_3={param_3}")
+
+            if param_1 and param_2 and param_3:
+                print(f"Executing jenkins with param_1: {param_1}, param_2: {param_2}, param_3: {param_3}")
+                execute_script(query, 'jenkins', param_1, param_2, param_3)
+            else:
+                query.edit_message_text("❌ **Error**: 所有參數未找到，請重新開始。", parse_mode="HTML")
+         
+    # Execute script on remote server
+    def execute_script(query, button_data, param_1=None, param_2=None, param_3=None):
+            try:
+                    ssh = paramiko.SSHClient()
+                    ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+                    ssh.connect(hostname, port, username, pkey=private_key)
+         
+                    if button_data.startswith('jenkins'):
+                        script_path = f'/opt/devops/script/telegram-script/jenkins.sh'
+                        command_to_execute = f'sh {script_path} {param_1} {param_2} {param_3}'
+                    else:
+                        script_path = f'/opt/devops/script/telegram-script/{button_data}.sh'
+                        command_to_execute = f'sh {script_path}'
+         
+                    print(f"Executing command: {command_to_execute}")
+         
+                    stdin, stdout, stderr = ssh.exec_command(command_to_execute)
+                    output = stdout.read().decode('utf-8')
+                    error_output = stderr.read().decode('utf-8')
+         
+                    full_output = output + error_output
+                    print(f"Command output: {full_output}")
+         
+                    if 'No such file or directory' in error_output:
+                        query.edit_message_text(f"❌ **Error**: Script '{button_data}' not found on the remote server.", parse_mode="HTML")
+                    else:
+                        # 處理正常輸出
+                        chunks = split_message(full_output)
+                        for chunk in chunks:
+                            print(f"Sending chunk: {chunk}")
+                            try:
+                               query.edit_message_text(chunk)
+                               time.sleep(1)
+                            except Exception as e:
+                                print(f"Error editing message: {e}")
+                                print(f"Chunk: {chunk}")
+                            #query.edit_message_text(chunk)
+         
+                    ssh.close()
+         
+            except paramiko.SSHException as ssh_error:
+                    query.edit_message_text(f"Error executing command: {str(ssh_error)}")
+            except Exception as e:
+                    query.edit_message_text(f"Error executing command: {str(e)}")
+         
+    # Handle Gdrive confirmation callback
+    def confirm_list_Gdrive_callback(update: Update, context: CallbackContext):
+            query = update.callback_query
+            button_data = query.data
+         
+            if button_data == 'confirm_list_Gdrive':
+                    execute_script(query, 'list_Gdrive')
+            elif button_data == 'cancel_list_Gdrive':
+                    query.edit_message_text("⛔ The list_Gdrive script execution was canceled.", parse_mode=ParseMode.HTML)
+         
+    # Utility function to split long messages
+    def split_message(text):
+            max_length = 4096
+            return [text[i:i+max_length] for i in range(0, len(text), max_length)]
+         
+    def error_handler(update: Update, context: CallbackContext):
+        # 捕獲並記錄異常
+        try:
+            raise context.error
+        except Exception as e:
+            print(f"Exception occurred: {e}")
+            # 這裡可以將錯誤資訊發送回使用者，方便調試
+            if update and update.message:
+               update.message.reply_text(f"❌  發生錯誤: {e}")
+         
+    # Telegram bot setup
+    updater = Updater(token=telegram_bot_token, use_context=True)
+    dispatcher = updater.dispatcher
+    dispatcher.add_error_handler(error_handler)
+    dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_telegram_message))
+    dispatcher.add_handler(CallbackQueryHandler(button_callback, pattern='^(list_domain|list_Gdrive|test|json)$'))
+    dispatcher.add_handler(CallbackQueryHandler(handle_jenkins, pattern='^jenkins$'))
+    dispatcher.add_handler(CallbackQueryHandler(handle_jenkins_selection, pattern='^jenkins_'))
+    dispatcher.add_handler(CallbackQueryHandler(handle_run_jenkins, pattern='^run_jenkins_'))
+    dispatcher.add_handler(CallbackQueryHandler(handle_execute_jenkins, pattern='^execute_jenkins_'))
+    dispatcher.add_handler(CallbackQueryHandler(confirm_list_Gdrive_callback, pattern='^(confirm_list_Gdrive|cancel_list_Gdrive)$'))
+    updater.start_polling()
+         
+    if __name__ == "__main__":
+        logging.basicConfig(level=logging.INFO)
+        app.run(host='0.0.0.0', port=443, debug=True)
